@@ -5,7 +5,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useMapContext } from '@/context/map-context';
 import { useTheme } from '@/context/theme-context';
-import { getUserLocation, createMapConfig, DEFAULT_LOCATION, getMapStyle } from './utils';
+import { createMapConfig, DEFAULT_LOCATION, getMapStyle } from './utils';
 import { MapLoadingIndicator } from '@/components/map-loading-indicator';
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
@@ -19,34 +19,18 @@ export const MapboxProvider = ({ children }: MapboxProviderProps) => {
   const { mapStyle } = useTheme();
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
-  const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_LOCATION);
-  const [isReady, setIsReady] = useState(false);
+  const mapCenter = DEFAULT_LOCATION;
   const [isMapLoaded, setIsMapLoaded] = useState(false);
 
-  // Get user's current location on mount
+  // Initialize with default location (no auto-geolocation)
   useEffect(() => {
-    getUserLocation()
-      .then((location) => {
-        const coords: [number, number] = [location.longitude, location.latitude];
-        setMapCenter(coords);
-        setCenter(coords);
-        setIsUserLocation(true);
-        console.log('User location obtained:', location);
-      })
-      .catch((error) => {
-        console.error('Failed to get user location:', error.message);
-        setMapCenter(DEFAULT_LOCATION);
-        setCenter(DEFAULT_LOCATION);
-        setIsUserLocation(false);
-      })
-      .finally(() => {
-        setIsReady(true);
-      });
+    setCenter(DEFAULT_LOCATION);
+    setIsUserLocation(false);
   }, [setCenter, setIsUserLocation]);
 
-  // Initialize map when container is ready and location is determined
+  // Initialize map when container is ready
   useEffect(() => {
-    if (!mapContainerRef.current || !isReady || mapInstanceRef.current) return;
+    if (!mapContainerRef.current || mapInstanceRef.current) return;
 
     const mapConfig = createMapConfig(mapCenter, { style: getMapStyle(mapStyle) });
 
@@ -74,7 +58,7 @@ export const MapboxProvider = ({ children }: MapboxProviderProps) => {
         setMap(null);
       }
     };
-  }, [isReady, mapCenter, mapStyle, setMap]);
+  }, [mapCenter, mapStyle, setMap]);
 
   // Update map style when mapStyle changes
   useEffect(() => {

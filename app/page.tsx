@@ -7,6 +7,7 @@ import { LocationMarker } from '@/components/location-marker';
 import { MapZoomControls } from '@/components/map/map-zoom-controls';
 import { MapStyleSelector } from '@/components/map/map-theme-toggle';
 import { MapLegend } from '@/components/map/map-legend';
+import { LocateMeButton } from '@/components/map/locate-me-button';
 import { ExchangeServerMarkers } from '@/components/exchange-server-markers';
 import SimpleConnections from '@/components/latency-connections-simple';
 import { useState, useEffect, useRef } from 'react';
@@ -68,6 +69,7 @@ const Home = () => {
     <ThemeProvider>
       <MapProvider>
         <MapboxProvider>
+          <LocateMeButton />
           <LocationMarker />
           <ExchangeServerMarkers servers={servers} />
           <SimpleConnections servers={servers} />

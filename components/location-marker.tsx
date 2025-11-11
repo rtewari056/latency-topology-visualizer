@@ -19,6 +19,12 @@ export const LocationMarker = ({ color }: LocationMarkerProps) => {
     // Remove existing marker if any
     if (markerRef.current) {
       markerRef.current.remove();
+      markerRef.current = null;
+    }
+
+    // Only show marker if user location has been obtained
+    if (!isUserLocation) {
+      return;
     }
 
     // Create new marker
