@@ -8,114 +8,71 @@ import { MapZoomControls } from '@/components/map/map-zoom-controls';
 import { MapStyleSelector } from '@/components/map/map-theme-toggle';
 import { MapLegend } from '@/components/map/map-legend';
 import { ExchangeServerMarkers } from '@/components/exchange-server-markers';
-import LatencyConnections from '@/components/latency-connections';
-import LatencyControls from '@/components/map/map-latency-controls';
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { fetchExchangeServerData } from '@/lib/api/exchange-data';
-import {
-  fetchLatencyData,
-  fetchLatencyUpdates,
-  filterConnectionsByRange,
-} from '@/lib/api/latency-data';
-import { LatencyConnection, LatencyStats, LatencyRange } from '@/lib/types/latency';
+import SimpleConnections from '@/components/latency-connections-simple';
+import { useState, useEffect, useRef } from 'react';
+import { fetchRealTimeExchangeData } from '@/lib/api/real-time-exchange-data';
 import { ExchangeServer } from '@/lib/types/exchange-server';
+
+const REFRESH_INTERVAL = 5000; // 5 seconds
 
 const Home = () => {
   const [serverCounts, setServerCounts] = useState({ AWS: 0, GCP: 0, Azure: 0 });
   const [servers, setServers] = useState<ExchangeServer[]>([]);
-
-  // Latency visualization state
-  const [latencyEnabled, setLatencyEnabled] = useState(true);
-  const [updateInterval, setUpdateInterval] = useState(5000); // 5 seconds default
-  const [allConnections, setAllConnections] = useState<LatencyConnection[]>([]);
-  const [latencyStats, setLatencyStats] = useState<LatencyStats | undefined>();
-  const [activeRanges, setActiveRanges] = useState<Set<LatencyRange>>(
-    new Set(['low', 'medium', 'high'])
-  );
-
   const updateTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch exchange servers on mount
   useEffect(() => {
-    fetchExchangeServerData().then((data) => {
-      setServerCounts(data.summary.byProvider);
-      setServers(data.servers);
-    });
+    console.log('🚀 Fetching servers...');
+
+    fetchRealTimeExchangeData()
+      .then((data) => {
+        console.log('✅ Loaded:', data.servers.length, 'servers');
+        setServerCounts(data.summary.byProvider);
+        setServers(data.servers);
+      })
+      .catch((error) => {
+        console.error('❌ Failed to fetch data:', error);
+      });
   }, []);
 
-  // Initialize latency connections when servers are loaded
+  // Auto-refresh every 5 seconds
   useEffect(() => {
     if (servers.length === 0) return;
 
-    fetchLatencyData(servers).then((data) => {
-      setAllConnections(data.connections);
-      setLatencyStats(data.stats);
-    });
-  }, [servers]);
+    console.log(`⏱️ Auto-refresh every ${REFRESH_INTERVAL}ms`);
 
-  // Filter connections based on active ranges (using useMemo for performance)
-  const filteredConnections = useMemo(() => {
-    return filterConnectionsByRange(allConnections, Array.from(activeRanges));
-  }, [allConnections, activeRanges]);
-
-  // Auto-update latency data at regular intervals
-  useEffect(() => {
-    if (!latencyEnabled || allConnections.length === 0) {
-      if (updateTimerRef.current) {
-        clearInterval(updateTimerRef.current);
-        updateTimerRef.current = null;
+    updateTimerRef.current = setInterval(async () => {
+      const timestamp = new Date().toLocaleTimeString();
+      console.log(`🔄 [${timestamp}] Refreshing...`);
+      
+      try {
+        const data = await fetchRealTimeExchangeData();
+        console.log(`✅ [${timestamp}] Updated ${data.servers.length} servers`);
+        
+        setServers(data.servers);
+        setServerCounts(data.summary.byProvider);
+      } catch (error) {
+        console.error(`❌ [${timestamp}] Refresh failed:`, error);
       }
-      return;
-    }
-
-    // Set up interval for updates
-    updateTimerRef.current = setInterval(() => {
-      fetchLatencyUpdates(allConnections).then((data) => {
-        setAllConnections(data.connections);
-        setLatencyStats(data.stats);
-      });
-    }, updateInterval);
+    }, REFRESH_INTERVAL);
 
     return () => {
       if (updateTimerRef.current) {
         clearInterval(updateTimerRef.current);
+        updateTimerRef.current = null;
       }
     };
-  }, [latencyEnabled, allConnections, updateInterval]);
-
-  const handleRangeToggle = (range: LatencyRange) => {
-    const newRanges = new Set(activeRanges);
-    if (newRanges.has(range)) {
-      newRanges.delete(range);
-    } else {
-      newRanges.add(range);
-    }
-    setActiveRanges(newRanges);
-  };
+  }, [servers.length]);
 
   return (
     <ThemeProvider>
       <MapProvider>
         <MapboxProvider>
           <LocationMarker />
-          <ExchangeServerMarkers />
-          {latencyEnabled && (
-            <LatencyConnections
-              connections={filteredConnections}
-              showAnimation={true}
-            />
-          )}
+          <ExchangeServerMarkers servers={servers} />
+          <SimpleConnections servers={servers} />
           <MapZoomControls />
           <MapStyleSelector />
-          <LatencyControls
-            isEnabled={latencyEnabled}
-            onToggle={setLatencyEnabled}
-            updateInterval={updateInterval}
-            onIntervalChange={setUpdateInterval}
-            activeRanges={activeRanges}
-            onRangeToggle={handleRangeToggle}
-            stats={latencyStats}
-          />
           <MapLegend serverCounts={serverCounts} />
         </MapboxProvider>
       </MapProvider>

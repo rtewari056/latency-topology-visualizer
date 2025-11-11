@@ -55,6 +55,7 @@ export const MapboxProvider = ({ children }: MapboxProviderProps) => {
       ...mapConfig,
       attributionControl: false,
       logoPosition: 'bottom-right',
+      projection: 'globe', // Use globe projection
     });
 
     // Wait for map to fully load

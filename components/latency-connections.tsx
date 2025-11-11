@@ -26,39 +26,58 @@ export default function LatencyConnections({
   const pulseDataRef = useRef<Map<string, number>>(new Map());
   const layersInitializedRef = useRef(false);
 
+  console.log('🌐 LatencyConnections render:', {
+    hasMap: !!map,
+    connectionsCount: connections.length,
+    showAnimation,
+  });
+
   useEffect(() => {
-    if (!map) return;
+    if (!map) {
+      console.log('⚠️ Map not available yet');
+      return;
+    }
 
-    // Wait for style to load before adding layers
+    console.log('🎯 First useEffect - Initializing layers');
+
+    // Initialize layers with a delay to ensure map is ready
     const initLayers = () => {
-      if (!map.isStyleLoaded()) return;
-      initializeLayers(map);
-      layersInitializedRef.current = true;
+      console.log('✅ Initializing layers (forced)...');
+      try {
+        initializeLayers(map);
+        layersInitializedRef.current = true;
 
-      // Update data immediately after layers are created if we have connections
-      if (connections.length > 0) {
-        updateConnectionData(map, connections);
+        // Update data immediately after layers are created if we have connections
+        if (connections.length > 0) {
+          console.log(`📊 Updating data with ${connections.length} connections`);
+          updateConnectionData(map, connections);
+        }
+      } catch (error) {
+        console.error('❌ Error initializing layers:', error);
       }
     };
 
-    if (map.isStyleLoaded()) {
-      initializeLayers(map);
-      layersInitializedRef.current = true;
+    // Listen for style changes (when user switches map theme)
+    const handleStyleLoad = () => {
+      console.log('🔄 Style changed, reinitializing layers');
+      layersInitializedRef.current = false;
+      setTimeout(initLayers, 100);
+    };
 
-      // Update data immediately if we have connections
-      if (connections.length > 0) {
-        updateConnectionData(map, connections);
-      }
-    } else {
-      map.once('style.load', initLayers);
-    }
+    // Use timeout to ensure map is ready (don't rely on isStyleLoaded)
+    const timeoutId = setTimeout(initLayers, 500);
+
+    // Listen for style changes
+    map.on('style.load', handleStyleLoad);
 
     return () => {
+      clearTimeout(timeoutId);
       const frameId = animationFrameRef.current;
       if (frameId) {
         cancelAnimationFrame(frameId);
       }
       map.off('style.load', initLayers);
+      map.off('style.load', handleStyleLoad);
       if (map.isStyleLoaded()) {
         cleanupLayers(map);
       }
@@ -67,7 +86,16 @@ export default function LatencyConnections({
   }, [map, connections]);
 
   useEffect(() => {
-    if (!map || connections.length === 0 || !map.isStyleLoaded() || !layersInitializedRef.current) return;
+    if (!map || connections.length === 0 || !layersInitializedRef.current) {
+      console.log('⚠️ Second useEffect - Skipping:', {
+        hasMap: !!map,
+        connectionsCount: connections.length,
+        layersInitialized: layersInitializedRef.current
+      });
+      return;
+    }
+
+    console.log(`🔄 Second useEffect - Updating ${connections.length} connections`);
 
     // Update connection data
     updateConnectionData(map, connections);
@@ -100,15 +128,25 @@ export default function LatencyConnections({
 }
 
 function initializeLayers(map: MapboxMap) {
+  console.log('🎨 Initializing latency connection layers...');
+  
+  // Check if layers already exist (to avoid duplicate layer errors)
+  if (map.getLayer('latency-connections-base')) {
+    console.log('ℹ️ Layers already exist, skipping initialization');
+    return;
+  }
+  
   // Add source for connection lines
   if (!map.getSource('latency-connections')) {
     map.addSource('latency-connections', {
       type: 'geojson',
+      lineMetrics: true, // Enable line metrics for better rendering
       data: {
         type: 'FeatureCollection',
         features: [],
       },
     });
+    console.log('✅ Added latency-connections source');
   }
 
   // Add source for animated pulses
@@ -128,12 +166,17 @@ function initializeLayers(map: MapboxMap) {
       id: 'latency-connections-base',
       type: 'line',
       source: 'latency-connections',
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
       paint: {
-        'line-color': ['get', 'color'],
-        'line-width': 2,
-        'line-opacity': 0.4,
+        'line-color': '#00ff00', // Bright green for testing
+        'line-width': 4,
+        'line-opacity': 0.8,
       },
     });
+    console.log('✅ Added latency-connections-base layer with BRIGHT GREEN color');
   }
 
   // Add animated dashed line layer
@@ -142,13 +185,18 @@ function initializeLayers(map: MapboxMap) {
       id: 'latency-connections-animated',
       type: 'line',
       source: 'latency-connections',
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
       paint: {
-        'line-color': ['get', 'color'],
-        'line-width': 2.5,
-        'line-opacity': 0.7,
-        'line-dasharray': [0, 4, 3],
+        'line-color': '#ffff00', // Bright yellow for testing
+        'line-width': 5,
+        'line-opacity': 1,
+        'line-dasharray': [2, 2],
       },
     });
+    console.log('✅ Added latency-connections-animated layer with BRIGHT YELLOW color');
   }
 
   // Add circle layer for pulse points
@@ -157,34 +205,20 @@ function initializeLayers(map: MapboxMap) {
       id: 'latency-pulse-points',
       type: 'circle',
       source: 'latency-pulses',
+      layout: {},
       paint: {
-        'circle-radius': [
-          'interpolate',
-          ['linear'],
-          ['get', 'progress'],
-          0,
-          3,
-          0.5,
-          7,
-          1,
-          3,
-        ],
-        'circle-color': ['get', 'color'],
-        'circle-opacity': [
-          'interpolate',
-          ['linear'],
-          ['get', 'progress'],
-          0,
-          0.6,
-          0.5,
-          1,
-          1,
-          0.4,
-        ],
-        'circle-blur': 0.4,
+        'circle-radius': 6,
+        'circle-color': '#ff00ff', // Bright magenta for testing
+        'circle-opacity': 0.8,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-opacity': 0.5,
       },
     });
+    console.log('✅ Added latency-pulse-points layer with BRIGHT MAGENTA color');
   }
+  
+  console.log('🎨 All layers initialized successfully');
 }
 
 function cleanupLayers(map: MapboxMap) {
@@ -209,6 +243,13 @@ function cleanupLayers(map: MapboxMap) {
 }
 
 function updateConnectionData(map: MapboxMap, connections: LatencyConnection[]) {
+  // Remove the style loaded check - if layers are initialized, we can update
+  const source = map.getSource('latency-connections') as GeoJSONSource;
+  if (!source) {
+    console.warn('⚠️ latency-connections source not found!');
+    return;
+  }
+
   const lineFeatures = connections.map((conn) => ({
     type: 'Feature' as const,
     properties: {
@@ -223,13 +264,66 @@ function updateConnectionData(map: MapboxMap, connections: LatencyConnection[]) 
     },
   }));
 
-  const source = map.getSource('latency-connections') as GeoJSONSource;
-  if (source) {
-    source.setData({
-      type: 'FeatureCollection',
-      features: lineFeatures,
+  console.log(`📊 Updating connection data: ${lineFeatures.length} features`);
+  console.log('🔍 Raw connections data:', connections.slice(0, 2).map(c => ({
+    id: c.id,
+    source: c.sourceCoordinates,
+    target: c.targetCoordinates,
+    latency: c.latencyMs,
+    range: c.range
+  })));
+  
+  if (lineFeatures.length > 0) {
+    const sample = lineFeatures[0];
+    console.log('🔍 Sample connection details:', {
+      from: sample.geometry.coordinates[0],
+      to: sample.geometry.coordinates[1],
+      color: sample.properties.color,
+      range: sample.properties.range,
+      latency: sample.properties.latency
+    });
+    
+    // Check if coordinates are valid
+    const [fromLng, fromLat] = sample.geometry.coordinates[0];
+    const [toLng, toLat] = sample.geometry.coordinates[1];
+    console.log('🔍 Coordinate validation:', {
+      fromValid: fromLng >= -180 && fromLng <= 180 && fromLat >= -90 && fromLat <= 90,
+      toValid: toLng >= -180 && toLng <= 180 && toLat >= -90 && toLat <= 90,
+      from: `[${fromLng}, ${fromLat}]`,
+      to: `[${toLng}, ${toLat}]`
     });
   }
+  
+  source.setData({
+    type: 'FeatureCollection',
+    features: lineFeatures,
+  });
+  console.log('✅ Connection data updated successfully');
+  
+  // Force map repaint to ensure lines are rendered
+  map.triggerRepaint();
+  
+  // Force layer visibility and check if layers exist
+  const baseLayer = map.getLayer('latency-connections-base');
+  const animLayer = map.getLayer('latency-connections-animated');
+  
+  if (baseLayer) {
+    map.setLayoutProperty('latency-connections-base', 'visibility', 'visible');
+    console.log('✅ Base layer exists and set to visible');
+  } else {
+    console.error('❌ Base layer NOT FOUND!');
+  }
+  
+  if (animLayer) {
+    map.setLayoutProperty('latency-connections-animated', 'visibility', 'visible');
+    console.log('✅ Animated layer exists and set to visible');
+  } else {
+    console.error('❌ Animated layer NOT FOUND!');
+  }
+  
+  console.log('🎨 Map projection:', map.getProjection());
+  console.log('🎨 Map style loaded:', map.isStyleLoaded());
+  console.log('🎨 Map zoom:', map.getZoom());
 }
 
 function startAnimation(

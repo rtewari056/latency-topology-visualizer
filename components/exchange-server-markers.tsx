@@ -1,55 +1,96 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { useMapContext } from '@/context/map-context';
-import { fetchExchangeServerData } from '@/lib/api/exchange-data';
 import { ExchangeServer, CLOUD_PROVIDER_COLORS } from '@/lib/types/exchange-server';
 
-export const ExchangeServerMarkers = () => {
+interface ExchangeServerMarkersProps {
+  servers: ExchangeServer[];
+}
+
+export const ExchangeServerMarkers = ({ servers }: ExchangeServerMarkersProps) => {
   const { map } = useMapContext();
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
-  const currentPopupRef = useRef<mapboxgl.Popup | null>(null);
-  const [servers, setServers] = useState<ExchangeServer[]>([]);
+  const markersRef = useRef<Map<string, { marker: mapboxgl.Marker; popup: mapboxgl.Popup }>>(new Map());
+  const openPopupServerIdRef = useRef<string | null>(null);
 
-  // Fetch server data
+  // Helper function to create popup content
+  const createPopupContent = (server: ExchangeServer) => {
+    const statusColor =
+      server.status === 'online'
+        ? '#10b981'
+        : server.status === 'degraded'
+        ? '#f59e0b'
+        : '#ef4444';
+
+    return `
+      <div style="padding: 8px; min-width: 200px;">
+        <div style="font-weight: 600; font-size: 16px; color: #1f2937; margin-bottom: 8px;">
+          ${server.exchange}
+        </div>
+        <div style="display: grid; gap: 6px; font-size: 13px; color: #4b5563;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-weight: 500;">📍 Location:</span>
+            <span>${server.location.city}, ${server.location.country}</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-weight: 500;">☁️ Provider:</span>
+            <span style="color: ${CLOUD_PROVIDER_COLORS[server.cloudProvider]}; font-weight: 600;">
+              ${server.cloudProvider}
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-weight: 500;">🌐 Region:</span>
+            <span>${server.region}</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-weight: 500;">⚡ Latency:</span>
+            <span style="color: ${server.latency < 50 ? '#10b981' : server.latency < 80 ? '#f59e0b' : '#ef4444'}; font-weight: 600;">
+              ${server.latency}ms
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-weight: 500;">🔔 Status:</span>
+            <span style="color: ${statusColor}; font-weight: 600; text-transform: capitalize;">
+              ${server.status}
+            </span>
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
+  // Initial creation of markers (run once when map is ready and we have servers)
   useEffect(() => {
-    fetchExchangeServerData()
-      .then((data) => {
-        setServers(data.servers);
-      })
-      .catch((error) => {
-        console.error('Failed to fetch exchange server data:', error);
-      });
-  }, []);
-
-  // Create markers when map and servers are ready
-  useEffect(() => {
-    if (!map || servers.length === 0) return;
-
-    // Clear existing markers and current popup
-    markersRef.current.forEach((marker) => marker.remove());
-    if (currentPopupRef.current) {
-      currentPopupRef.current.remove();
-      currentPopupRef.current = null;
+    if (!map || servers.length === 0) {
+      console.log('⚠️ Markers not created:', { hasMap: !!map, serversCount: servers.length });
+      return;
     }
-    markersRef.current = [];
+
+    // Only create markers if they don't exist yet
+    const markersMap = markersRef.current;
+    if (markersMap.size > 0) {
+      console.log('↩️ Markers already exist, skipping creation');
+      return;
+    }
+
+    console.log(`🎯 Creating markers for ${servers.length} servers...`);
 
     // Close popup when clicking on map
     const handleMapClick = () => {
-      if (currentPopupRef.current) {
-        currentPopupRef.current.remove();
-        currentPopupRef.current = null;
-      }
+      openPopupServerIdRef.current = null;
     };
 
     map.on('click', handleMapClick);
 
-    // Create markers for each server
+    // Create markers for each server (only once)
     servers.forEach((server) => {
+      console.log(`➕ Creating marker for ${server.exchange} at [${server.location.longitude}, ${server.location.latitude}]`);
+
       // Create marker element
       const el = document.createElement('div');
       el.className = 'exchange-marker';
+      el.setAttribute('data-server-id', server.id);
       
       // Create inner circle
       const innerCircle = document.createElement('div');
@@ -72,6 +113,7 @@ export const ExchangeServerMarkers = () => {
           : '#ef4444';
       
       const statusDot = document.createElement('div');
+      statusDot.className = 'status-dot';
       statusDot.style.position = 'absolute';
       statusDot.style.top = '-2px';
       statusDot.style.right = '-2px';
@@ -93,43 +135,6 @@ export const ExchangeServerMarkers = () => {
         innerCircle.style.transform = 'scale(1)';
       });
 
-      // Create popup content
-      const popupContent = `
-        <div style="padding: 8px; min-width: 200px;">
-          <div style="font-weight: 600; font-size: 16px; color: #1f2937; margin-bottom: 8px;">
-            ${server.exchange}
-          </div>
-          <div style="display: grid; gap: 6px; font-size: 13px; color: #4b5563;">
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-weight: 500;">📍 Location:</span>
-              <span>${server.location.city}, ${server.location.country}</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-weight: 500;">☁️ Provider:</span>
-              <span style="color: ${CLOUD_PROVIDER_COLORS[server.cloudProvider]}; font-weight: 600;">
-                ${server.cloudProvider}
-              </span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-weight: 500;">🌐 Region:</span>
-              <span>${server.region}</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-weight: 500;">⚡ Latency:</span>
-              <span style="color: ${server.latency < 50 ? '#10b981' : server.latency < 80 ? '#f59e0b' : '#ef4444'}; font-weight: 600;">
-                ${server.latency}ms
-              </span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-weight: 500;">🔔 Status:</span>
-              <span style="color: ${statusColor}; font-weight: 600; text-transform: capitalize;">
-                ${server.status}
-              </span>
-            </div>
-          </div>
-        </div>
-      `;
-
       // Create popup
       const popup = new mapboxgl.Popup({
         offset: 15,
@@ -138,46 +143,91 @@ export const ExchangeServerMarkers = () => {
         maxWidth: '300px',
       })
         .setLngLat([server.location.longitude, server.location.latitude])
-        .setHTML(popupContent);
+        .setHTML(createPopupContent(server));
 
-      // Add click handler to marker element to manage popup state
+      // Add click handler to marker element
       el.addEventListener('click', (e) => {
-        e.stopPropagation(); // Prevent map click event
+        e.stopPropagation();
         
-        // Close current popup if exists
-        if (currentPopupRef.current) {
-          currentPopupRef.current.remove();
+        // Close all other popups
+        markersMap.forEach(({ popup: p }, id) => {
+          if (id !== server.id && p.isOpen()) {
+            p.remove();
+          }
+        });
+        
+        // Toggle current popup
+        if (popup.isOpen()) {
+          popup.remove();
+          openPopupServerIdRef.current = null;
+        } else {
+          popup.addTo(map);
+          openPopupServerIdRef.current = server.id;
         }
-        
-        // Open new popup at marker location
-        popup.addTo(map);
-        currentPopupRef.current = popup;
       });
 
       // Handle popup close button
       popup.on('close', () => {
-        if (currentPopupRef.current === popup) {
-          currentPopupRef.current = null;
+        if (openPopupServerIdRef.current === server.id) {
+          openPopupServerIdRef.current = null;
         }
       });
 
-      // Create marker - let Mapbox handle positioning
+      // Create marker
       const marker = new mapboxgl.Marker(el)
         .setLngLat([server.location.longitude, server.location.latitude])
         .addTo(map);
 
-      markersRef.current.push(marker);
+      markersMap.set(server.id, { marker, popup });
+      console.log(`✅ Marker created and added for ${server.exchange} (${server.id})`);
     });
+
+    console.log(`🎯 Total markers in map: ${markersMap.size}`);
 
     // Cleanup on unmount
     return () => {
       map.off('click', handleMapClick);
-      markersRef.current.forEach((marker) => marker.remove());
-      if (currentPopupRef.current) {
-        currentPopupRef.current.remove();
-      }
+      markersMap.forEach(({ marker, popup }) => {
+        marker.remove();
+        popup.remove();
+      });
+      markersMap.clear();
     };
-  }, [map, servers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, servers.length]); // Only run when map is ready or number of servers changes (not when data updates)
+
+  // Update markers when server data changes
+  useEffect(() => {
+    if (!map || servers.length === 0) return;
+
+    servers.forEach((server) => {
+      const markerData = markersRef.current.get(server.id);
+      if (!markerData) return;
+
+      const { marker, popup } = markerData;
+
+      // Update status dot color
+      const el = marker.getElement();
+      const statusDot = el.querySelector('.status-dot') as HTMLElement;
+      if (statusDot) {
+        const statusColor =
+          server.status === 'online'
+            ? '#10b981'
+            : server.status === 'degraded'
+            ? '#f59e0b'
+            : '#ef4444';
+        statusDot.style.backgroundColor = statusColor;
+      }
+
+      // Update popup content
+      popup.setHTML(createPopupContent(server));
+
+      // If this popup is currently open, log the update
+      if (openPopupServerIdRef.current === server.id && popup.isOpen()) {
+        console.log(`🔄 Updated popup for ${server.exchange}: ${server.latency}ms`);
+      }
+    });
+  }, [servers, map]);
 
   return null;
 };
